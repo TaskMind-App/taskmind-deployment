@@ -1,4 +1,26 @@
+
+
 services:
+  discovery-service:
+    build: ../discovery-service
+    ports:
+      - "8761:8761"
+    networks:
+      - microservice-network
+
+  gateway-service:
+    build: ../gateway-service
+    ports:
+      - "8080:8080"
+    depends_on:
+      - discovery-service
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+      - TOKEN_SECRET_KEY=${TOKEN_SECRET_KEY}
+      - TOKEN_EXPIRATION_TIME=${TOKEN_EXPIRATION_TIME}
+    networks:
+      - microservice-network
+
   postgres-db:
     image: postgres:latest
     container_name: taskmind-postgres
@@ -10,6 +32,36 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservice-network
+
+  task-service:
+    build:
+      context: ../task-service
+      dockerfile: Dockerfile
+    ports:
+      - "8090:8090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres-db:5432/${POSTGRES_DB}
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      discovery-service:
+        condition: service_started
+    restart: always
+    networks:
+      - microservice-network
 
   mongodb:
     image: mongo:latest
@@ -22,7 +74,30 @@ services:
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD}
     volumes:
       - mongo_data:/data/db
+    networks:
+      - microservice-network
+
+  user-service:
+    build:
+      context: ../user-service
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_DATA_MONGODB_URI=mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongodb:27017/${MONGO_DB}?authSource=admin
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+      - TOKEN_SECRET_KEY=${TOKEN_SECRET_KEY}
+      - TOKEN_EXPIRATION_TIME=${TOKEN_EXPIRATION_TIME}
+    depends_on:
+      - mongodb
+      - discovery-service
+    networks:
+      - microservice-network
 
 volumes:
   postgres_data:
   mongo_data:
+
+networks:
+  microservice-network:
+    driver: bridge
