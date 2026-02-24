@@ -101,6 +101,8 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    networks:
+      - microservice-network
   ai-service:
     build:
       context: ../ai-agent-service
@@ -109,10 +111,12 @@ services:
       - "8000:8000"
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
-      - TASK_SERVICE_URL=http://gateway-service:8090/api/tasks/user
+      - TASK_SERVICE_URL=http://task-service:8090/api/tasks/user
     depends_on:
       - ollama
-      - gateway-service
+      - discovery-service
+    networks:
+      - microservice-network
 
 volumes:
   postgres_data:
