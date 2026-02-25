@@ -1,8 +1,17 @@
-
-
 services:
+
+  redis:
+    image: redis:alpine
+    container_name: taskmind-redis
+    ports:
+      - "6379:6379"
+    restart: always
+    networks:
+      - microservice-network
+
   discovery-service:
     build: ../discovery-service
+    container_name: discovery-service
     ports:
       - "8761:8761"
     networks:
@@ -13,7 +22,8 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - discovery-service
+      discovery-service:
+        condition: service_started
     environment:
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
       - TOKEN_SECRET_KEY=${TOKEN_SECRET_KEY}
@@ -54,10 +64,15 @@ services:
       - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
+      - SPRING_CACHE_TYPE=redis
     depends_on:
       postgres-db:
         condition: service_healthy
       discovery-service:
+        condition: service_started
+      redis:
         condition: service_started
     restart: always
     networks:
@@ -103,6 +118,7 @@ services:
       - ollama_data:/root/.ollama
     networks:
       - microservice-network
+
   ai-service:
     build:
       context: ../ai-agent-service
@@ -112,9 +128,11 @@ services:
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
       - TASK_SERVICE_URL=http://task-service:8090/api/tasks/user
+      - EUREKA_SERVER=http://discovery-service:8761/eureka/
     depends_on:
       - ollama
       - discovery-service
+      - gateway-service
     networks:
       - microservice-network
 
